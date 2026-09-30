@@ -28,8 +28,7 @@ Installing plugins this way is unofficial: back up first, and use it at your own
 
 ## Install
 
-1. Download `MPC-Plaits-<version>-mpc-armv7.zip` from [Releases](../../releases). Plaits is also listed in the
-   [MPC OS Plugin Catalog](https://sd88me.github.io/mpc-vst-plugins/).
+1. Download `MPC-Plaits-<version>-mpc-armv7.zip` from [Releases](../../releases).
 2. Unzip it and copy the folder to the device:
    ```
    scp -r MPC-Plaits-1.0.0 root@<device-ip>:/tmp/
