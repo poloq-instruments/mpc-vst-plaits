@@ -5,3 +5,4 @@ vst/art/pieces/
 __pycache__/
 *.pyc
 /dist/
+.DS_Store
