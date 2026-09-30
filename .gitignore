@@ -1,0 +1,7 @@
+vst/build/
+tests/build/
+tests/build-arm/
+vst/art/pieces/
+__pycache__/
+*.pyc
+/dist/
