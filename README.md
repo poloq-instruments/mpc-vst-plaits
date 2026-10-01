@@ -178,7 +178,7 @@ Nothing is taken from the VCV panel files themselves.
 
 ## Credits
 
-Port, skin and MPC integration by **poloq (Tiago Pinto)** ([poloq-instruments](https://github.com/poloq-instruments)).
+Port, skin and MPC integration by **poloq** ([poloq-instruments](https://github.com/poloq-instruments)).
 
 Built on:
 
