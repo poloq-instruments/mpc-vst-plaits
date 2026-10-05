@@ -19,7 +19,11 @@
       "-include",
       "cstdio",
       "-Isrc/dsp",
-      "-Isrc/dsp/third_party/eurorack"
+      "-Isrc/dsp/third_party/eurorack",
+      "-mcpu=cortex-a17",
+      "-mfpu=neon-vfpv4",
+      "-O3",
+      "-funsafe-math-optimizations"
     ],
     "libs": [
       "-lm"
