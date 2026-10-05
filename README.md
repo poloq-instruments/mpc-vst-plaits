@@ -105,9 +105,9 @@ Measured on an MPC One with `tools/bench.sh`, as a share of one 128-sample audio
 | Load | p99 |
 |---|---|
 | 1 voice | ~3% |
-| 4 to 16 voices | ~8% |
-| Release tail | ~11% |
-| Fast Q-Link sweep | ~30% |
+| 4 to 16 voices | ~7% |
+| Release tail | ~10% |
+| Fast Q-Link sweep | ~24% |
 
 The Q-Link sweep peak comes from Plaits recomputing the model's parameters on every step.
 

@@ -7,7 +7,7 @@ python3 "$MV/tools/gen_vst.py" "$here/vst/vst.json" --params-h >/dev/null
 eval "$(python3 "$MV/tools/gen_vst.py" "$here/vst/vst.json" --shell)"
 SOURCES="$SOURCES ${EXTRA:-}"; export SOURCES CFLAGS LIBS MV
 IMG=gcc:12; PLAT=""; BUILD=tests/build
-if [ "${ARCH:-}" = arm ]; then IMG=arm32v7/gcc:12; PLAT="--platform linux/arm/v7"; BUILD=tests/build-arm; fi
+if [ "${ARCH:-}" = arm ]; then IMG=arm32v7/gcc:12; PLAT="--platform linux/arm/v7"; BUILD=tests/build-arm; CFLAGS="$CFLAGS $ARM_CFLAGS"; fi
 export BUILD
 docker run --rm -e ASAN_OPTIONS=detect_leaks=0 $PLAT -u "$(id -u):$(id -g)" -v "$here":"$here" -v "$MV":"$MV":ro -w "$here" -e BUILD -e XFLAGS -e SOURCES -e CFLAGS -e LIBS -e MV $IMG bash -c '
 set -e; SAN="-fsanitize=address,undefined -fno-omit-frame-pointer -g -O1"; OBJS=""; mkdir -p $BUILD

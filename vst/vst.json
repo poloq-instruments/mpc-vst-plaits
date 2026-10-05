@@ -2,7 +2,7 @@
   "name": "MPC Plaits",
   "vendor": "poloq",
   "uid": "MiPl",
-  "version": 1000,
+  "version": 1001,
   "so": "plaits.so",
   "module": "../src/module.json",
   "layout": "layout.conf",
@@ -19,7 +19,9 @@
       "-include",
       "cstdio",
       "-Isrc/dsp",
-      "-Isrc/dsp/third_party/eurorack",
+      "-Isrc/dsp/third_party/eurorack"
+    ],
+    "cflags_arm": [
       "-mcpu=cortex-a17",
       "-mfpu=neon-vfpv4",
       "-O3",
