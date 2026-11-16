@@ -154,7 +154,7 @@ so this reads the display with ffmpeg's `kmsgrab` rather than the (empty) frameb
 ### Tests
 
 - `TEST=tests/<name>.c tests/run_c.sh` builds one host test (`controls`, `notes`, `sustain`, `voices`, `voicing`,
-  `modulation`, `deadvoice`, `dump_defaults`) with ASan/UBSan in Docker and runs it. After editing a header,
+  `modulation`, `deadvoice`, `blockedge`, `chiprelease`, `dump_defaults`) with ASan/UBSan in Docker and runs it. After editing a header,
   `rm -rf tests/build` first. `notes` takes a mode argument (`-1` = all): `TEST=tests/notes.c tests/run_c.sh -1`.
 - `tests/run_fuzz.sh [blocks] [seed]` runs the random-input fuzzer (`tests/fuzz.c`).
 

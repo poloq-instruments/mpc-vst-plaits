@@ -65,6 +65,11 @@ typedef struct {
     bool sustain;
     bool sustained[128];
     float notes_last;   // NOTES: the last position the host asked for (-1 = none yet), see set_param
+    // mpc-vst-plaits: rendered frames a host block has not used yet (render_block)
+    float carry_l[PPF_CHUNK_FRAMES];
+    float carry_r[PPF_CHUNK_FRAMES];
+    int carry_pos;
+    int carry_len;
 } freak_instance_t;
 
 // ---- the parameter table: one entry per src/module.json chain_params key (except the wrapper-only
@@ -241,6 +246,7 @@ static void *create_instance(const char *module_dir, const char *json_defaults) 
     inst->sustain = false;
     memset(inst->sustained, 0, sizeof inst->sustained);
     inst->notes_last = -1.0f;
+    inst->carry_pos = inst->carry_len = 0;
     if (json_defaults && json_defaults[0]) apply_state_json(inst, json_defaults);
     inst->engine.init();
     inst->engine.set_params(inst->params);
@@ -375,21 +381,24 @@ static void render_block(void *instance, int16_t *out_interleaved_lr, int frames
     freak_instance_t *inst = (freak_instance_t *)instance;
     if (!inst || !out_interleaved_lr || frames <= 0) return;
 
+    // mpc-vst-plaits: the engine is only ever asked for whole PPF_CHUNK_FRAMES chunks; what a host block does not
+    // use yet waits in the instance for the next one (see plaits_move_engine.h). A 128-frame block used to end in
+    // one 8-frame chunk, which broke the 6-op FM models' waveform once per block. The cost is that a note or
+    // parameter change can take up to 11 frames (0.25 ms) longer to be heard.
     int offset = 0;
-    float left[PPF_MAX_RENDER];
-    float right[PPF_MAX_RENDER];
-
     while (offset < frames) {
-        int n = frames - offset;
-        if (n > PPF_MAX_RENDER) n = PPF_MAX_RENDER;
-
-        inst->engine.render(left, right, n);
-
-        for (int i = 0; i < n; ++i) {
-            out_interleaved_lr[(offset + i) * 2 + 0] = float_to_i16(left[i]);
-            out_interleaved_lr[(offset + i) * 2 + 1] = float_to_i16(right[i]);
+        if (inst->carry_pos >= inst->carry_len) {
+            inst->engine.render(inst->carry_l, inst->carry_r, PPF_CHUNK_FRAMES);
+            inst->carry_pos = 0;
+            inst->carry_len = PPF_CHUNK_FRAMES;
         }
-
+        int n = frames - offset;
+        if (n > inst->carry_len - inst->carry_pos) n = inst->carry_len - inst->carry_pos;
+        for (int i = 0; i < n; ++i) {
+            out_interleaved_lr[(offset + i) * 2 + 0] = float_to_i16(inst->carry_l[inst->carry_pos + i]);
+            out_interleaved_lr[(offset + i) * 2 + 1] = float_to_i16(inst->carry_r[inst->carry_pos + i]);
+        }
+        inst->carry_pos += n;
         offset += n;
     }
 }

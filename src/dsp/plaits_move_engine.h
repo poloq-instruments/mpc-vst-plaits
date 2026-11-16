@@ -10,6 +10,11 @@ extern "C" {
 
 #define PPF_SAMPLE_RATE 44100
 #define PPF_MAX_RENDER 256
+// mpc-vst-plaits: Plaits' own block size. render() must always be asked for whole chunks of this many frames: the
+// 6-op FM engine renders its two voices on alternate calls, 2 x size frames each, and carries half over, so a call
+// of another size (128 = 10 x 12 + 8) breaks the waveform at that point. freak_plugin.cpp's render_block() feeds it
+// whole chunks and carries the remainder to the next block (src/VENDORED.md, tests/blockedge.c).
+#define PPF_CHUNK_FRAMES 12
 #define PPF_MAX_VOICES 8
 #define PPF_NUM_LFOS 2
 #define PPF_NUM_ENVS 2
