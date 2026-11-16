@@ -110,7 +110,11 @@ class SineOscillator {
     }
     
     *sin = amplitude * SineNoWrap(phase_);
-    *cos = amplitude * SineNoWrap(phase_ + 0.25f);
+    // mpc-vst-plaits: phase_ + 0.25f rounds up to exactly 1.25 when phase_ is the last float below 1, and SineNoWrap
+    // then reads one entry past lut_sine (ASan, tests/fuzz.c). 1.25 and 0.25 are the same point.
+    float cos_phase = phase_ + 0.25f;
+    if (cos_phase >= 1.25f) cos_phase = 0.25f;
+    *cos = amplitude * SineNoWrap(cos_phase);
   }
   
   void Render(float frequency, float amplitude, float* out, size_t size) {

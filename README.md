@@ -142,6 +142,14 @@ restarts MPC. `--bench` adds `tools/bench.sh -j` results to the release notes.
 MPC never cleans its skin image cache (`/var/tmp/filmstrips`, on the same partition). If space runs low, clear it with
 MPC stopped.
 
+### 64-bit (Gen 2) build, unofficial
+
+`./build-aarch64.sh` builds `plaits.so` for aarch64 without Docker (zig as the cross compiler), takes the skin from
+the published armv7 zip and writes a plugin folder for MPC OS 3.10.1's `VST2 Plugins` loader (`./build-armv7.sh`: the
+same for 32-bit). `tests/run_native.sh`
+runs the host tests natively. What it does, what it reuses and what was tested on an MPC Key 37 (Gen 2):
+[`BUILD-AARCH64.md`](BUILD-AARCH64.md). Releases are 32-bit only.
+
 ### Screenshots
 
 ```
@@ -154,7 +162,7 @@ so this reads the display with ffmpeg's `kmsgrab` rather than the (empty) frameb
 ### Tests
 
 - `TEST=tests/<name>.c tests/run_c.sh` builds one host test (`controls`, `notes`, `sustain`, `voices`, `voicing`,
-  `modulation`, `deadvoice`, `dump_defaults`) with ASan/UBSan in Docker and runs it. After editing a header,
+  `modulation`, `deadvoice`, `blockedge`, `chiprelease`, `dump_defaults`) with ASan/UBSan in Docker and runs it. After editing a header,
   `rm -rf tests/build` first. `notes` takes a mode argument (`-1` = all): `TEST=tests/notes.c tests/run_c.sh -1`.
 - `tests/run_fuzz.sh [blocks] [seed]` runs the random-input fuzzer (`tests/fuzz.c`).
 

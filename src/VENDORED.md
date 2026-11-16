@@ -82,6 +82,23 @@ build of Mutable Instruments' Plaits macro oscillator, the same way `mpc-vst-dx7
   - `plaits/dsp/fm/dx_units.h` `Pow2Fast`: shifts the exponent as unsigned (same bits); upstream left-shifts a
     negative int, which UBSan flags now that the 6-op FM models play.
 
+- **Render chunk size, Chiptune gate, sine table** (found on a Gen 2 MPC; they are in the 32-bit build as well: a
+  32-bit ARM build of the same source gives bit-identical output). All marked `mpc-vst-plaits:` in the source:
+  - `freak_plugin.cpp` `render_block`, `PPF_CHUNK_FRAMES`: the engine is only ever asked for whole 12-frame chunks,
+    and what a host block has not used waits for the next one. Plaits' `SixOpEngine` renders its two voices on
+    alternate calls, twice the call's length each, and carries half over, so it needs every call to be the same
+    length; a 128-frame block was cut into ten chunks of 12 and one of 8, which broke the waveform of 6-Op FM I,
+    II and III once per block (audible as grain). A note or parameter change can now land up to 11 frames (0.25 ms)
+    later. `tests/blockedge.c`: the break was 90 to 220000 times the median, and is 1.1 to 1.3.
+  - `plaits_move_engine.cpp`, `gate_gain`: in GATE mode a Chiptune voice follows the key gate as a gain with a
+    ~3 ms slew. With TRIG patched Plaits bypasses the LPG for Chiptune, and at TIMBRE ATT 0 the engine has no decay
+    of its own, so a released key kept sounding at full level until the voice was stolen or the 30 s cap freed it.
+    Other amp modes and models are untouched (PING with Chiptune still rings on). `tests/chiprelease.c`.
+  - `plaits/dsp/oscillator/sine_oscillator.h` `SineOscillator::Next`: `phase_ + 0.25f` rounds up to exactly 1.25
+    when `phase_` is the last float below 1, and `SineNoWrap` then read one entry past `lut_sine` (the bass drum's
+    sustained mode; ASan in `tests/fuzz.c`, seed 1, once the chunking above had shifted its timing). 1.25 is taken
+    as 0.25, the same point of the sine.
+
 - **Zeroed engine memory** (`plaits_move_engine.cpp`, `ppf_engine_t` constructor): the voices' Plaits state is built in
   `calloc`ed memory. Plaits relies on its RAM starting zeroed (`.bss` on the module); several engines' `Init()`
   leave state unset (e.g. `FMEngine`'s downsampler taps). With reused heap memory inside MPC that state could

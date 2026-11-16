@@ -123,12 +123,13 @@ enum {
 
 constexpr int kMaxEngines = 24;
 constexpr int kVoiceRamBytes = 16384;
-constexpr int kChunkFrames = 12;
+constexpr int kChunkFrames = PPF_CHUNK_FRAMES;
 // TRIG is a gate (high while the key is down) instead of MrHyde's 3-block pulse; see src/VENDORED.md.
 constexpr int kStealFadeBlocks = 8;                               // ~2 ms fade-out before a stolen voice restarts
 constexpr float kSilenceLevel = 1e-4f;                            // -80 dBFS, per voice before the mix gain
 constexpr int kSilenceHoldSamples = PPF_SAMPLE_RATE / 10;         // released + this long below it -> voice free
 constexpr int kMaxReleaseSamples = PPF_SAMPLE_RATE * 30;          // safety cap on a released voice's tail
+constexpr float kGateSlew = 0.0867f;                              // per 12-frame chunk: a ~3 ms time constant
 constexpr int kMonoStackSize = 16;
 constexpr float kFixedVoiceMixGain = 0.3535533905932738f;  // 1/sqrt(8)
 constexpr float kDefaultBpm = 120.0f;
@@ -229,6 +230,7 @@ struct VoiceState {
     float trig_count;        // TRIG RATE: samples since the last retrigger
     int silent_samples;
     int release_samples;
+    float gate_gain;         // mpc-vst-plaits: Chiptune in GATE mode, the key gate as a gain (render)
 
     // A steal fades the old sound out first; the new note waits here.
     int fade_blocks;
@@ -439,6 +441,7 @@ struct ppf_engine_t::Impl {
             v.trig_count = 0.0f;
             v.silent_samples = 0;
             v.release_samples = 0;
+            v.gate_gain = 0.0f;
             v.fade_blocks = 0;
             v.pending = false;
             v.pending_released = false;
@@ -1076,6 +1079,7 @@ void ppf_engine_t::render(float *out_l, float *out_r, int frames) {
             mods.trigger = v.trig_sent ? 1.0f : 0.0f;
             float gate = v.gate ? 1.0f : 0.0f;
             float post = 1.0f;   // per-voice gain after Plaits
+            float post_from = -1.0f;   // >= 0: ramp from this to post over the chunk (Chiptune in GATE mode, below)
             switch (P.amp_mode) {
                 case PPF_AMP_PING:
                     // LEVEL unpatched: TRIG strikes the LPG, which rings out with DECAY however long the key is held.
@@ -1102,8 +1106,19 @@ void ppf_engine_t::render(float *out_l, float *out_r, int frames) {
                 case PPF_AMP_GATE:
                 default:
                     mods.level = velocity * gate;
+                    // mpc-vst-plaits: with TRIG patched Chiptune bypasses the LPG, and at TIMBRE ATT 0 it has no decay
+                    // of its own, so LEVEL did nothing and a released key kept sounding at full level until the voice
+                    // was stolen or the 30 s cap freed it. The key gate is applied here instead, as a gain with a
+                    // ~3 ms slew (no click), so the voice also goes silent and is freed (tests/chiprelease.c).
+                    if (P.model == 7) {
+                        post_from = v.gate_gain;
+                        v.gate_gain += (gate - v.gate_gain) * kGateSlew;
+                        if (fabsf(gate - v.gate_gain) < 1e-4f) v.gate_gain = gate;
+                        post = v.gate_gain;
+                    }
                     break;
             }
+            if (P.amp_mode != PPF_AMP_GATE || P.model != 7) v.gate_gain = gate;   // no jump when switching to it
 
             plaits::Voice::Frame tmp[kChunkFrames];
             v.synth.Render(patch, mods, tmp, (size_t)chunk);
@@ -1119,7 +1134,8 @@ void ppf_engine_t::render(float *out_l, float *out_r, int frames) {
             for (int j = 0; j < chunk; ++j) {
                 float out_main = (float)tmp[j].out / 32768.0f;
                 float out_aux = (float)tmp[j].aux / 32768.0f;
-                float blended = lerpf(out_main, out_aux, aux_mix) * post;
+                float post_now = post_from < 0.0f ? post : post_from + (post - post_from) * (float)(j + 1) / (float)chunk;
+                float blended = lerpf(out_main, out_aux, aux_mix) * post_now;
                 peak = std::max(peak, fabsf(blended));
                 float mono = blended * gain;
                 gain += gain_step;
