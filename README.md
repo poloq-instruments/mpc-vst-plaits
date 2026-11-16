@@ -145,7 +145,8 @@ MPC stopped.
 ### 64-bit (Gen 2) build, unofficial
 
 `./build-aarch64.sh` builds `plaits.so` for aarch64 without Docker (zig as the cross compiler), takes the skin from
-the published armv7 zip and writes a plugin folder for MPC OS 3.10.1's `VST2 Plugins` loader. `tests/run_native.sh`
+the published armv7 zip and writes a plugin folder for MPC OS 3.10.1's `VST2 Plugins` loader (`./build-armv7.sh`: the
+same for 32-bit). `tests/run_native.sh`
 runs the host tests natively. What it does, what it reuses and what was tested on an MPC Key 37 (Gen 2):
 [`BUILD-AARCH64.md`](BUILD-AARCH64.md). Releases are 32-bit only.
 

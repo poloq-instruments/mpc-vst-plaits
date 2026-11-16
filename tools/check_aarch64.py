@@ -1,22 +1,24 @@
 #!/usr/bin/env python3
-"""Offline checks for the aarch64 build (called by build-aarch64.sh). Standard library only.
+"""Offline checks for the build (called by build-aarch64.sh, for aarch64 and armv7). Standard library only.
 
     check_aarch64.py <plugin folder> <params.h> [<released armv7 plaits.so>]
 
-1. plaits.so is ELF64 little-endian aarch64, a shared object, exports exactly VSTPluginMain, needs only
-   libc/libm/libpthread/libdl (+ the loader), and no glibc symbol version above 2.39 (the device's).
+1. plaits.so is a little-endian shared object for aarch64 (ELF64) or hard-float ARM (ELF32), named by plugin.json
+   as file64 or file32 to match; it exports exactly VSTPluginMain, needs only libc/libm/libpthread/libdl (+ the
+   loader), and no glibc symbol version above 2.39 (the device's).
 2. Every "Parameter N" the skin binds to exists in params.h.
 3. With the released armv7 binary given: its parameter table (found in the binary) equals params.h, i.e. the
    released skin and saved projects fit this build: key, name, unit, min, max, default and option count always, and
    every other field (momentary, display kind, step_of, popup_of, ...) when params.h has the release's param_t.
 """
+import json
 import os
 import re
 import struct
 import sys
 
 MAX_GLIBC = (2, 39)
-ALLOWED_LIBS = {"libc.so.6", "libm.so.6", "libpthread.so.0", "libdl.so.2", "ld-linux-aarch64.so.1"}
+ALLOWED_LIBS = {"libc.so.6", "libm.so.6", "libpthread.so.0", "libdl.so.2", "ld-linux-aarch64.so.1", "ld-linux-armhf.so.3"}
 
 
 def fail(msg):
@@ -24,22 +26,34 @@ def fail(msg):
     sys.exit(1)
 
 
-def elf64(path):
+def elf(path):
+    """-> (arch, exported symbols, needed libraries, symbol versions) of an ELF64 aarch64 or ELF32 hard-float ARM
+    shared object; anything else fails."""
     d = open(path, "rb").read()
     if d[:4] != b"\x7fELF":
         fail("%s is not an ELF file" % path)
-    if d[4] != 2 or d[5] != 1:
-        fail("not ELF64 little-endian (class %d, data %d)" % (d[4], d[5]))
+    if d[5] != 1:
+        fail("not little-endian")
     e_type, e_machine = struct.unpack_from("<HH", d, 16)
     if e_type != 3:
         fail("not a shared object (e_type %d)" % e_type)
-    if e_machine != 183:
-        fail("not aarch64 (e_machine %d)" % e_machine)
-    e_shoff, = struct.unpack_from("<Q", d, 0x28)
-    e_shentsize, e_shnum, e_shstrndx = struct.unpack_from("<HHH", d, 0x3A)
+    if d[4] == 2 and e_machine == 183:
+        arch = "aarch64"
+        e_shoff, = struct.unpack_from("<Q", d, 0x28)
+        e_shentsize, e_shnum, e_shstrndx = struct.unpack_from("<HHH", d, 0x3A)
+        sh_fmt, sym_fmt, sym_size, dyn_fmt, dyn_size = "<IIQQQQIIQQ", "<IBBHQQ", 24, "<qQ", 16
+    elif d[4] == 1 and e_machine == 40:
+        arch = "armv7"
+        e_shoff, e_flags = struct.unpack_from("<II", d, 0x20)
+        if not e_flags & 0x400:
+            fail("ARM, but not the hard-float ABI (e_flags %#x)" % e_flags)
+        e_shentsize, e_shnum, e_shstrndx = struct.unpack_from("<HHH", d, 0x2E)
+        sh_fmt, sym_fmt, sym_size, dyn_fmt, dyn_size = "<IIIIIIIIII", "<IIIBBH", 16, "<iI", 8
+    else:
+        fail("neither ELF64 aarch64 nor ELF32 ARM (class %d, e_machine %d)" % (d[4], e_machine))
     secs = []
     for i in range(e_shnum):
-        name, typ, flags, addr, off, size, link, info, align, entsize = struct.unpack_from("<IIQQQQIIQQ", d, e_shoff + i * e_shentsize)
+        name, typ, flags, addr, off, size, link, info, align, entsize = struct.unpack_from(sh_fmt, d, e_shoff + i * e_shentsize)
         secs.append(dict(name=name, type=typ, off=off, size=size, link=link, info=info, entsize=entsize))
     strtab = secs[e_shstrndx]
 
@@ -52,13 +66,14 @@ def elf64(path):
     dynstr = by[".dynstr"]
     exported, needed, versions = [], [], set()
     dynsym = by[".dynsym"]
-    for i in range(1, dynsym["size"] // 24):
-        st_name, st_info, st_other, st_shndx, st_value, st_size = struct.unpack_from("<IBBHQQ", d, dynsym["off"] + i * 24)
+    for i in range(1, dynsym["size"] // sym_size):
+        f = struct.unpack_from(sym_fmt, d, dynsym["off"] + i * sym_size)
+        st_name, st_info, st_shndx = (f[0], f[1], f[3]) if arch == "aarch64" else (f[0], f[3], f[5])
         if st_shndx != 0 and (st_info >> 4) in (1, 2):   # defined, GLOBAL or WEAK
             exported.append(s(dynstr, st_name))
     dyn = by[".dynamic"]
-    for i in range(dyn["size"] // 16):
-        tag, val = struct.unpack_from("<qQ", d, dyn["off"] + i * 16)
+    for i in range(dyn["size"] // dyn_size):
+        tag, val = struct.unpack_from(dyn_fmt, d, dyn["off"] + i * dyn_size)
         if tag == 1:
             needed.append(s(dynstr, val))
     vr = by.get(".gnu.version_r")
@@ -72,7 +87,7 @@ def elf64(path):
                 versions.add(s(dynstr, name))
                 a += anext
             o += nxt
-    return exported, needed, versions
+    return arch, exported, needed, versions
 
 
 TOKEN = re.compile(r'"((?:[^"\\\\]|\\\\.)*)"|([^,\s][^,]*)')
@@ -162,7 +177,11 @@ def compare(rows, opts, table, nwords):
 def main():
     folder, params_h = sys.argv[1], sys.argv[2]
     so = os.path.join(folder, "plaits.so")
-    exported, needed, versions = elf64(so)
+    arch, exported, needed, versions = elf(so)
+    pj = json.load(open(os.path.join(folder, "plugin.json")))
+    want = "file64" if arch == "aarch64" else "file32"
+    if pj.get(want) != "plaits.so" or ("file32" if want == "file64" else "file64") in pj:
+        fail("plugin.json does not name plaits.so as %s only (the library is %s)" % (want, arch))
     if exported != ["VSTPluginMain"]:
         fail("exports %r, expected only VSTPluginMain" % exported)
     extra = set(needed) - ALLOWED_LIBS
@@ -174,8 +193,9 @@ def main():
         fail("non-glibc symbol versions: %s" % ", ".join(other))
     if glibc and glibc[-1][:2] > MAX_GLIBC:
         fail("needs glibc %s (device has %d.%d)" % (".".join(map(str, glibc[-1])), *MAX_GLIBC))
-    print("ok: ELF64 aarch64 shared object, exports VSTPluginMain only, needs %s, highest glibc %s"
-          % (" ".join(needed), ".".join(map(str, glibc[-1])) if glibc else "none"))
+    print("ok: %s shared object, exports VSTPluginMain only, needs %s, highest glibc %s"
+          % ("ELF64 aarch64" if arch == "aarch64" else "ELF32 ARM hard-float", " ".join(needed),
+             ".".join(map(str, glibc[-1])) if glibc else "none"))
 
     rows, opts = params_rows(params_h)
     n = int(re.search(r"#define NPARAMS (\d+)", open(params_h).read()).group(1))

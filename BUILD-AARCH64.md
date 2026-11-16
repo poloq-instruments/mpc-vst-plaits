@@ -178,7 +178,7 @@ See "Device load" at the end of this note.
 
 ### Not tested
 
-- 32-bit: this build produces no armv7 binary, and the folder has no `file32`.
+- One folder carrying both `file32` and `file64`: each build writes its own folder with one of them.
 - Any Gen2 device other than the Key 37 G2, and any MPC OS other than 3.10.1.12.
 - The `MPC.settings` / modded-MPC install route (the zip's `install.sh`): not used here.
 - ASan/UBSan on aarch64 Linux itself (the sanitizer runs were on macOS arm64 and x86-64).
@@ -204,6 +204,51 @@ See "Device load" at the end of this note.
   the newer wrapper ignores a second press of a button within 250 ms (MODEL `<` / `>`), and a Q-Link sweep of
   NOTES (polyphony) comes back one step short. On macOS that wrapper also needs
   `-Wl,-U,_mpc_engine_changed` for its weak engine hooks. This build uses `poloq-dev`, as the release did.
+
+## The 32-bit (armv7) build
+
+`./build-armv7.sh` (= `./build-aarch64.sh armv7`) builds the same sources with the same compiler for the 32-bit
+MPCs: target `arm-linux-gnueabihf.2.31`, `-mcpu=cortex_a17`, output in `vst/build/armv7/`, `plugin.json` with
+`"file32": "plaits.so"`. Its purpose is a 32-bit library that carries the three fixes; the 1.0.1 release does not.
+`plaits.so` comes out as sha256 `58a8e529ddd066e6a0e680d182ee94260c8f124ff2b271e1e8e3ac08f1a6771f` (ELF32 hard-float
+ARM, exports `VSTPluginMain` only, needs `libm`, `libc`, `libdl` and the loader, glibc symbols up to 2.27, C++
+runtime linked in; the parameter table equals the released binary's in every field).
+
+Unlike the aarch64 build it keeps the release's `-O3 -funsafe-math-optimizations`. Measured on an MPC Live II
+(Cortex-A17, `modelbench`, 6 voices, share of one 128-frame block, average over the 24 models):
+
+| Library | average | costliest model (mean) |
+|---|---|---|
+| 1.0.1 release (gcc 11, `-O3 -funsafe-math-optimizations`) | 16.5 to 16.7 % | Harmonic 25.3 % |
+| this build, `-O3` only | 17.9 % | Harmonic 26.7 % |
+| this build, `-O3 -funsafe-math-optimizations` (the default) | 16.6 to 16.7 % | Harmonic 25.7 % |
+
+`-O3` alone gives output bit-identical to the aarch64 build but costs 7 % more CPU than the release on average (up
+to 27 % on Snare Drum), on a device where CPU is short. With the flag a steady note differs from the strict build
+by 70 to 105 dB below the signal.
+
+Tested on the MPC Live II (MPC 3.10.1.12, glibc 2.39), outside the MPC app, with the harnesses loading the
+installed 1.0.1 release binary and this build side by side:
+
+- Held-then-released note: the release binary shows both bugs (block-edge break of 6-Op FM I / II / III 14441 /
+  221723 / 86 times the median; Chiptune at -18.8 dBFS one second after release); this build 1.1 / 1.2 / 1.3 and
+  silence. These are the released binary's own numbers, not a rebuild's.
+- Steady middle C on all 24 models, release binary against this build: every pitched model the same in level and
+  spectrum (0.0 dB in every quarter-octave band) except the three repaired 6-op models; the noise-driven models
+  (Swarm, Noise, Particle, Inharmonic String, Hi-Hat) differ in random detail.
+- `render` (all 24 models, every parameter swept each block): no NaN/Inf, levels within 1.3 dB of the strict build.
+  This test separates any two builds that round differently: the release binary and a strict clang build of the
+  v1.0.1 source differ by as much (levels within 1.5 dB, Swarm 3.9 dB), and the unsafe-math build is the closer of
+  the two to the release binary.
+- Natively (`XFLAGS=-funsafe-math-optimizations tests/run_native.sh`): all eleven host tests pass.
+
+In the MPC app on the Live II (2026-11-16): the library replaced the release's `plaits.so` in the installed folder
+(the release's skin and `version.xml` kept, `plugin.json` with `file32`); after an app restart the log shows
+`Attempting to load VST`, `Creating VST instance: plaits`, `Initialising VST: plaits (1.0.0.1)`, no crash, and the
+6-op FM models and Chiptune sound right by ear.
+
+Not tested for armv7: the Docker/gcc route with the fixes, MPC OS 2.x (the build needs nothing newer than glibc
+2.27, as the release), any 32-bit device other than the Live II.
 
 ## For a Gen 2 release
 

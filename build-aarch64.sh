@@ -3,6 +3,8 @@
 # MPC OS 3.10.1's official loader (<drive>/VST2 Plugins/). See BUILD-AARCH64.md.
 #
 #   ./build-aarch64.sh            build + assemble + offline checks
+#   ./build-aarch64.sh armv7      the same for 32-bit MPCs ("Gen1": Live, Live II, One, X, Key 61, Force), with the
+#                                 same compiler; output in vst/build/armv7/ (also: ./build-armv7.sh)
 #
 # Needs:
 #   MPC_VST  an mpc-vst-plugins checkout on the branch build.sh asks for (poloq-dev; wrapper/, adapters/,
@@ -27,12 +29,24 @@ REL_URL="https://github.com/poloq-instruments/mpc-vst-plaits/releases/download/v
 REL_SHA256=76986f7a6d221bcba9cb8e3289b659bb25527af146dde7df2b535cb259f1c763   # GitHub's published digest of the asset
 FOLDER="poloq - VST - MPC Plaits"
 WRAPPER_REV=dd50b07                   # poloq-instruments/mpc-vst-plugins, branch poloq-dev, 2026-10-05
-ZIG_TARGET=aarch64-linux-gnu.2.31     # glibc 2.31 symbols at most; the device has 2.39
-ZIG_CPU=cortex_a55                    # the little cores of the RK3588(S); runs on the A76 cores too
+ARCH="${1:-aarch64}"
+case "$ARCH" in
+  aarch64) ZIG_TARGET=aarch64-linux-gnu.2.31      # glibc 2.31 symbols at most; the device has 2.39
+           ZIG_CPU=cortex_a55                     # the little cores of the RK3588(S); runs on the A76 cores too
+           BITS=64 ;;
+  armv7)   ZIG_TARGET=arm-linux-gnueabihf.2.31    # hard-float, like the release
+           ZIG_CPU=cortex_a17                     # the RK3288 of the 32-bit MPCs (NEON, VFPv4), as the release's -mcpu
+           BITS=32 ;;
+  *) echo "usage: $0 [aarch64|armv7]" >&2; exit 1 ;;
+esac
 # The armv7 release is built with -mcpu=cortex-a17 -mfpu=neon-vfpv4 -O3 -funsafe-math-optimizations (vst.json cflags_arm).
-# -O3 is kept. -funsafe-math-optimizations is NOT: on armv7 gcc needs it to use NEON for float maths at all, on aarch64
-# NEON is IEEE-conformant and used anyway, and clang's reading of the flag is not what the release was tested with.
-ARCH_CFLAGS="-O3"
+# armv7 here: the same flags (measured on a Cortex-A17: without -funsafe-math-optimizations clang's build costs 7 % more
+# CPU than the release on average, with it the two are level; the output moves by 70 to 105 dB below the signal).
+# aarch64: -O3 only. NEON is IEEE-conformant there and used anyway, CPU is not short, and the output stays
+# bit-identical to an unoptimised build.
+if [ -z "${ARCH_CFLAGS:-}" ]; then
+  case "$ARCH" in armv7) ARCH_CFLAGS="-O3 -funsafe-math-optimizations" ;; *) ARCH_CFLAGS="-O3" ;; esac
+fi
 
 # ---- tools ----------------------------------------------------------------------------------------------------------
 if [ -z "${MPC_VST:-}" ]; then
@@ -56,7 +70,7 @@ MPC_VST_REV="$(git -C "$MPC_VST" rev-parse --short=7 HEAD 2>/dev/null || echo un
 echo "zig $("${zig[@]}" version); mpc-vst-plugins at $MPC_VST ($MPC_VST_REV)"
 [ "$MPC_VST_REV" = "$WRAPPER_REV" ] || echo "note: the $REL_VERSION release was built with mpc-vst-plugins $WRAPPER_REV (poloq-dev), this is $MPC_VST_REV" >&2
 
-B="$here/vst/build/aarch64"
+B="$here/vst/build/$ARCH"
 OBJ="$B/obj"
 GEN="$B/gen"
 rm -rf "$OBJ" "$GEN" "$B/$FOLDER" "$B/plaits.so"
@@ -122,14 +136,14 @@ cp "$UP/version.xml" "$OUT/"
 cp "$B/plaits.so" "$OUT/plaits.so"          # at the folder root, where the release keeps it
 cp "$here/LICENSE" "$OUT/LICENSE"
 cat > "$OUT/CREDITS.txt" <<EOF
-MPC Plaits $REL_VERSION, unofficial 64-bit (aarch64) build.
+MPC Plaits $REL_VERSION, unofficial $BITS-bit ($ARCH) build.
 
 Port, skin and MPC integration by poloq: https://github.com/poloq-instruments/mpc-vst-plaits
 Built on Mutable Instruments Plaits by Emilie Gillet (MIT; panel artwork CC-BY-SA 3.0), schwung-mrhyde by
 handcraftedcc, Schwung by charlesvestal and mpc-vst-plugins by sd88me. Full notices: LICENSE (beside this file)
 and the README of the repository above.
 
-This build: plaits.so compiled for aarch64 by build-aarch64.sh (BUILD-AARCH64.md in the source tree) from the
+This build: plaits.so compiled for $ARCH by build-aarch64.sh (BUILD-AARCH64.md in the source tree) from the
 v$REL_VERSION source plus the fixes for the 6-op FM models (waveform breaks once per audio block), Chiptune (a released
 key kept sounding) and a one-entry table over-read; "Plugin Skins" and version.xml taken unchanged from
 $REL_ZIP; plugin.json added for MPC OS 3.10.1's "VST2 Plugins" loader.
@@ -147,8 +161,8 @@ cat > "$OUT/plugin.json" <<EOF
   "category": "Synth",
   "numInputs": 0,
   "numOutputs": 2,
-  "file64": "plaits.so",
-  "description": "Mutable Instruments Plaits (all 24 models) as a native instrument, with modulation and a touchscreen skin. Unofficial aarch64 build of poloq's port.",
+  "file$BITS": "plaits.so",
+  "description": "Mutable Instruments Plaits (all 24 models) as a native instrument, with modulation and a touchscreen skin. Unofficial $ARCH build of poloq's port.",
   "license": "MIT",
   "url": "https://github.com/poloq-instruments/mpc-vst-plaits"
 }
